@@ -1,7 +1,9 @@
 /**
  * Server-only module for extracting raw text from PDF buffers.
- * Uses pdf-parse under the hood (listed in serverExternalPackages).
+ * Uses unpdf which is specifically built for serverless environments
+ * (no DOMMatrix / browser API dependencies).
  */
+import { extractText, getDocumentProxy } from "unpdf"
 
 export async function extractTextFromPdfBase64(
   base64: string
@@ -11,12 +13,9 @@ export async function extractTextFromPdfBase64(
 }
 
 export async function extractTextFromBuffer(buffer: Buffer): Promise<string> {
-  // Dynamic import to keep this server-only
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pdfModule = await import("pdf-parse") as any
-  const pdfParse = pdfModule.default ?? pdfModule
-  const data = await pdfParse(buffer)
-  return data.text
+  const pdf = await getDocumentProxy(new Uint8Array(buffer))
+  const { text } = await extractText(pdf, { mergePages: true })
+  return text
 }
 
 export async function extractTextFromUrl(url: string): Promise<string> {
