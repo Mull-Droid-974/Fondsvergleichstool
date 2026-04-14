@@ -4,6 +4,25 @@ import type { FundData } from "@/lib/types/fund"
 
 const client = new Anthropic()
 
+/**
+ * Recursively replaces all null values with undefined.
+ * This is needed because Claude returns null for missing optional fields,
+ * but Zod .optional() only accepts undefined (not null).
+ */
+function stripNulls(value: unknown): unknown {
+  if (value === null) return undefined
+  if (Array.isArray(value)) return value.map(stripNulls)
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [
+        k,
+        stripNulls(v),
+      ])
+    )
+  }
+  return value
+}
+
 const HoldingSchema = z.object({
   name: z.string(),
   weight: z.number(),
@@ -11,17 +30,13 @@ const HoldingSchema = z.object({
   sector: z.string().optional(),
 })
 
-// nullish() accepts both null and undefined — handles Claude returning null for missing fields
-const opt = <T extends z.ZodTypeAny>(schema: T) =>
-  schema.nullish().transform((v) => v ?? undefined)
-
 const FundDataSchema = z.object({
   isin: z.string(),
   name: z.string(),
   provider: z.string(),
   currency: z.string().default("EUR"),
-  inceptionDate: opt(z.string()),
-  aum: opt(z.number()),
+  inceptionDate: z.string().optional(),
+  aum: z.number().optional(),
   costs: z.object({
     ter: z.number().nullable(),
     managementFee: z.number().nullable(),
@@ -35,22 +50,22 @@ const FundDataSchema = z.object({
     regionWeights: z.array(
       z.object({ region: z.string(), weight: z.number() })
     ),
-    activeShare: opt(z.number()),
-    numberOfPositions: opt(z.number()),
+    activeShare: z.number().optional(),
+    numberOfPositions: z.number().optional(),
   }),
   esg: z.object({
     sfdrArticle: z.union([z.literal(6), z.literal(8), z.literal(9)]).nullable(),
-    approach: opt(z.string()),
-    exclusions: z.array(z.string()).nullish().transform((v) => v ?? undefined),
-    sustainabilityScore: opt(z.number()),
+    approach: z.string().optional(),
+    exclusions: z.array(z.string()).optional(),
+    sustainabilityScore: z.number().optional(),
   }),
   risk: z.object({
-    volatility: opt(z.number()),
-    maxDrawdown: opt(z.number()),
-    sharpeRatio: opt(z.number()),
-    beta: opt(z.number()),
+    volatility: z.number().optional(),
+    maxDrawdown: z.number().optional(),
+    sharpeRatio: z.number().optional(),
+    beta: z.number().optional(),
   }),
-  extractionConfidence: opt(z.number().min(0).max(1)),
+  extractionConfidence: z.number().min(0).max(1).optional(),
 })
 
 const EXTRACTION_SYSTEM_PROMPT = `Du bist ein präziser Finanz-Daten-Extraktor. Deine Aufgabe ist es, strukturierte Fondsdaten aus Factsheet-Texten zu extrahieren.
@@ -62,40 +77,40 @@ Extrahiere exakt die folgenden Felder und gib sie als valides JSON zurück:
   "name": "string - Vollständiger Fondsname",
   "provider": "string - Fondsanbieter/Asset Manager",
   "currency": "string - Hauptwährung (EUR/USD/CHF)",
-  "inceptionDate": "string optional - Auflagedatum im ISO-Format YYYY-MM-DD",
-  "aum": "number optional - Assets under Management in Milliarden der Hauptwährung",
+  "inceptionDate": "string optional - Auflagedatum im ISO-Format YYYY-MM-DD, weglassen wenn unbekannt",
+  "aum": "number optional - Assets under Management in Milliarden, weglassen wenn unbekannt",
   "costs": {
     "ter": "number|null - Total Expense Ratio in Prozent (z.B. 0.75 für 0.75%)",
     "managementFee": "number|null - Management Fee in Prozent",
     "performanceFee": "number|null - Performance Fee in Prozent, null wenn keine"
   },
   "portfolio": {
-    "top10Holdings": [{"name": "string", "weight": "number in %", "isin": "string optional", "sector": "string optional"}],
-    "sectorWeights": [{"sector": "string", "weight": "number in %"}],
-    "regionWeights": [{"region": "string", "weight": "number in %"}],
-    "activeShare": "number optional - Active Share in %",
-    "numberOfPositions": "number optional - Anzahl Positionen"
+    "top10Holdings": [{"name": "string", "weight": number, "isin": "string oder weglassen", "sector": "string oder weglassen"}],
+    "sectorWeights": [{"sector": "string", "weight": number}],
+    "regionWeights": [{"region": "string", "weight": number}],
+    "activeShare": "number optional - weglassen wenn unbekannt",
+    "numberOfPositions": "number optional - weglassen wenn unbekannt"
   },
   "esg": {
-    "sfdrArticle": 6|8|9|null - SFDR-Klassifizierung,
-    "approach": "string optional - ESG-Ansatz",
-    "exclusions": ["string"] optional - Liste der Ausschlüsse,
-    "sustainabilityScore": "number optional - 0-100"
+    "sfdrArticle": 6|8|9|null,
+    "approach": "string optional - weglassen wenn unbekannt",
+    "exclusions": ["string array optional - weglassen wenn keine"],
+    "sustainabilityScore": "number optional - weglassen wenn unbekannt"
   },
   "risk": {
-    "volatility": "number optional - Annualisierte Volatilität in %",
-    "maxDrawdown": "number optional - Maximaler Drawdown in % (negativer Wert)",
-    "sharpeRatio": "number optional",
-    "beta": "number optional"
+    "volatility": "number optional - weglassen wenn unbekannt",
+    "maxDrawdown": "number optional - weglassen wenn unbekannt",
+    "sharpeRatio": "number optional - weglassen wenn unbekannt",
+    "beta": "number optional - weglassen wenn unbekannt"
   },
-  "extractionConfidence": "number - 0.0-1.0, wie sicher du dir bei der Extraktion bist"
+  "extractionConfidence": 0.0-1.0
 }
 
 Wichtig:
 - Alle Prozentzahlen als reine Zahl (z.B. 0.75 nicht "0.75%")
 - AuM immer in Milliarden (z.B. 2.3 für 2.3 Mrd.)
-- Fehlende Werte als null, nicht als 0 oder leerer String
-- ISIN wird als Parameter übergeben, verwende diese wenn nicht im Dokument gefunden
+- Fehlende optionale Felder WEGLASSEN (nicht null, nicht 0)
+- Nur costs.ter/managementFee/performanceFee dürfen null sein
 - Gib NUR valides JSON zurück, keine Erklärungen`
 
 export async function extractFundDataFromText(
@@ -130,10 +145,10 @@ export async function extractFundDataFromText(
   const rawJson = jsonMatch[1] ?? jsonMatch[0]
   const parsed = JSON.parse(rawJson)
 
-  // Ensure ISIN is set correctly
+  // Set ISIN and strip all nulls before Zod validation
   parsed.isin = isin
-  parsed.factsheetSource = "scraped"
+  const cleaned = stripNulls(parsed)
 
-  const validated = FundDataSchema.parse(parsed)
+  const validated = FundDataSchema.parse(cleaned)
   return { ...validated, factsheetSource: "scraped" } as FundData
 }
