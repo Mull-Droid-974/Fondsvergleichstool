@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { scrapeFundinfo } from "@/lib/scraper/fundinfo"
+import { scrapeFactsheet } from "@/lib/scraper"
 import { normalizeIsin, validateIsin } from "@/lib/utils/validators"
 
 export async function GET(request: NextRequest) {
@@ -17,23 +17,16 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  const result = await scrapeFundinfo(normalized)
-
-  if (!result.success) {
-    return NextResponse.json(
-      {
-        success: false,
-        isin: normalized,
-        error: result.error,
-      },
-      { status: 200 } // 200 so client can show fallback UI
-    )
-  }
+  const result = await scrapeFactsheet(normalized)
 
   return NextResponse.json({
-    success: true,
+    success: result.success,
     isin: normalized,
     pdfBase64: result.pdfBase64,
-    sourceUrl: result.sourceUrl,
+    source: result.source,
+    error: result.error,
   })
 }
+
+// Increase timeout for scraping (Vercel Pro: 60s, Hobby: 10s default)
+export const maxDuration = 60
