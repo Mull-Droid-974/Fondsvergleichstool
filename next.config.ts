@@ -1,7 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ["pdf-parse"],
+  experimental: {
+    // Needed for @react-pdf/renderer server-side rendering
+    serverComponentsExternalPackages: ["@react-pdf/renderer"],
+  },
 };
 
 export default nextConfig;
