@@ -7,6 +7,15 @@ import { extractFundDataFromText } from "@/lib/extraction/ai-extractor"
 import type { ExtractionRequest } from "@/lib/types/fund"
 
 export async function POST(request: NextRequest) {
+  // Guard: API key must be set
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error("[extract] ANTHROPIC_API_KEY ist nicht gesetzt!")
+    return NextResponse.json(
+      { error: "Serverkonfigurationsfehler: ANTHROPIC_API_KEY fehlt. Bitte in den Vercel Environment Variables setzen." },
+      { status: 500 }
+    )
+  }
+
   const body: ExtractionRequest = await request.json()
   const { isin, pdfBase64, blobUrl } = body
 
