@@ -11,13 +11,17 @@ const HoldingSchema = z.object({
   sector: z.string().optional(),
 })
 
+// nullish() accepts both null and undefined — handles Claude returning null for missing fields
+const opt = <T extends z.ZodTypeAny>(schema: T) =>
+  schema.nullish().transform((v) => v ?? undefined)
+
 const FundDataSchema = z.object({
   isin: z.string(),
   name: z.string(),
   provider: z.string(),
   currency: z.string().default("EUR"),
-  inceptionDate: z.string().optional(),
-  aum: z.number().optional(),
+  inceptionDate: opt(z.string()),
+  aum: opt(z.number()),
   costs: z.object({
     ter: z.number().nullable(),
     managementFee: z.number().nullable(),
@@ -31,22 +35,22 @@ const FundDataSchema = z.object({
     regionWeights: z.array(
       z.object({ region: z.string(), weight: z.number() })
     ),
-    activeShare: z.number().optional(),
-    numberOfPositions: z.number().optional(),
+    activeShare: opt(z.number()),
+    numberOfPositions: opt(z.number()),
   }),
   esg: z.object({
     sfdrArticle: z.union([z.literal(6), z.literal(8), z.literal(9)]).nullable(),
-    approach: z.string().optional(),
-    exclusions: z.array(z.string()).optional(),
-    sustainabilityScore: z.number().optional(),
+    approach: opt(z.string()),
+    exclusions: z.array(z.string()).nullish().transform((v) => v ?? undefined),
+    sustainabilityScore: opt(z.number()),
   }),
   risk: z.object({
-    volatility: z.number().optional(),
-    maxDrawdown: z.number().optional(),
-    sharpeRatio: z.number().optional(),
-    beta: z.number().optional(),
+    volatility: opt(z.number()),
+    maxDrawdown: opt(z.number()),
+    sharpeRatio: opt(z.number()),
+    beta: opt(z.number()),
   }),
-  extractionConfidence: z.number().min(0).max(1).optional(),
+  extractionConfidence: opt(z.number().min(0).max(1)),
 })
 
 const EXTRACTION_SYSTEM_PROMPT = `Du bist ein präziser Finanz-Daten-Extraktor. Deine Aufgabe ist es, strukturierte Fondsdaten aus Factsheet-Texten zu extrahieren.
